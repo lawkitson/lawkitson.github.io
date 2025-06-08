@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>London Airport Travel Planner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chosen Palette: Warm Neutral Harmony -->
+    <!-- Application Structure Plan: A user-centric dashboard SPA. The primary interaction is a toggle to select the starting station (Paddington/Holborn). This immediately updates a dynamic bar chart and a grid of cards, each representing an airport. Users can sort these cards by time, cost, or changes. Clicking a card reveals detailed route information in a modal. This task-oriented design ("How do I get from X to Y?") is more intuitive for a traveler than the report's linear structure, allowing for direct comparison and exploration. -->
+    <!-- Visualization & Content Choices: 
+        - Report Data (Time, Cost, Changes) -> Goal: Compare -> Viz: Interactive Bar Chart (Chart.js) -> Interaction: User selects station and metric (time/cost/changes) to update the chart dynamically. Justification: Provides instant visual comparison of key metrics across all airports for the selected origin, which is more effective than a static table.
+        - Report Data (Route Details) -> Goal: Inform -> Presentation: Modal Pop-up (HTML/CSS/JS) -> Interaction: Clickable card. Justification: Keeps the main interface clean and uncluttered while providing deep-dive information on demand, preventing information overload.
+        - Key Insights -> Goal: Summarize -> Presentation: Dynamic Text Block (HTML/JS) -> Interaction: Updates based on selected station. Justification: Provides relevant, contextual conclusions without forcing the user to read the entire report analysis. 
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 400px;
+            }
+        }
+        .station-btn.active {
+            background-color: #0d9488;
+            color: white;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .sort-btn.active {
+            background-color: #4338ca;
+            color: white;
+        }
+        .modal {
+            transition: opacity 0.3s ease;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <main class="container mx-auto p-4 md:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-slate-900 mb-2">London Airport Travel Planner</h1>
+            <p class="text-slate-600 max-w-3xl mx-auto">An interactive guide to public transport from central London to major airports. Select a starting station to compare travel times, costs, and journey complexity.</p>
+        </header>
+
+        <section id="controls" class="mb-8 p-4 bg-white rounded-xl shadow-sm">
+            <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+                <div class="w-full md:w-auto">
+                    <label class="block text-sm font-medium text-slate-700 mb-2 text-center md:text-left">Select Starting Station:</label>
+                    <div id="station-selector" class="flex justify-center rounded-lg bg-slate-100 p-1">
+                        <button data-station="paddington" class="station-btn w-full md:w-auto text-center px-6 py-2 rounded-md text-sm font-semibold transition-all duration-200">Paddington</button>
+                        <button data-station="holborn" class="station-btn w-full md:w-auto text-center px-6 py-2 rounded-md text-sm font-semibold transition-all duration-200">Holborn</button>
+                    </div>
+                </div>
+                <div class="w-full md:w-auto">
+                    <label class="block text-sm font-medium text-slate-700 mb-2 text-center md:text-left">Sort Journeys By:</label>
+                    <div id="sort-selector" class="flex flex-wrap justify-center gap-2">
+                        <button data-sort="time" class="sort-btn px-4 py-2 bg-indigo-100 text-indigo-800 rounded-md text-sm font-medium transition-all duration-200">⏱️ Fastest Time</button>
+                        <button data-sort="cost" class="sort-btn px-4 py-2 bg-indigo-100 text-indigo-800 rounded-md text-sm font-medium transition-all duration-200">💰 Lowest Cost</button>
+                        <button data-sort="changes" class="sort-btn px-4 py-2 bg-indigo-100 text-indigo-800 rounded-md text-sm font-medium transition-all duration-200">🔄 Fewest Changes</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="visualization" class="mb-12 p-6 bg-white rounded-xl shadow-sm">
+            <h2 class="text-2xl font-bold text-center mb-1 text-slate-900">Journey Comparison</h2>
+            <p id="chart-title" class="text-slate-600 text-center mb-6">Fastest Travel Time from London Paddington</p>
+            <div class="chart-container">
+                <canvas id="travelChart"></canvas>
+            </div>
+             <div id="chart-metric-selector" class="flex justify-center gap-2 mt-4">
+                <button data-metric="time" class="chart-metric-btn sort-btn active px-3 py-1 text-xs">Time</button>
+                <button data-metric="cost" class="chart-metric-btn sort-btn px-3 py-1 text-xs">Cost</button>
+                <button data-metric="changes" class="chart-metric-btn sort-btn px-3 py-1 text-xs">Changes</button>
+            </div>
+        </section>
+
+        <section id="airport-cards-section">
+             <h2 class="text-2xl font-bold text-center mb-6 text-slate-900">Airport Journey Details</h2>
+            <div id="airport-cards-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            </div>
+        </section>
+
+        <section id="key-takeaways" class="mt-12 p-6 bg-white rounded-xl shadow-sm">
+            <h2 class="text-2xl font-bold mb-4 text-slate-900">Key Takeaways</h2>
+            <div id="takeaways-content" class="prose prose-slate max-w-none"></div>
+        </section>
+
+    </main>
+
+    <div id="modal" class="modal fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center p-4 z-50 opacity-0 pointer-events-none">
+        <div id="modal-content" class="bg-white rounded-xl shadow-2xl p-6 md:p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto transform scale-95 transition-transform duration-300">
+            <div class="flex justify-between items-start mb-4">
+                <h3 id="modal-title" class="text-2xl font-bold text-slate-900"></h3>
+                <button id="modal-close" class="text-slate-500 hover:text-slate-800 transition-colors">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="modal-body" class="prose prose-slate max-w-none"></div>
+        </div>
+    </div>
+
+    <script>
+        const travelData = {
+            paddington: [
+                {
+                    airport: "Heathrow Airport",
+                    code: "LHR",
+                    time: 15,
+                    timeText: "15-18 min",
+                    cost: 10,
+                    costText: "From £10",
+                    changes: 0,
+                    changesText: "0",
+                    mode: "Heathrow Express",
+                    modeIcon: "🚆",
+                    details: `
+                        <p><strong>Primary Route (Fastest): Heathrow Express</strong><br>
+                        This dedicated express train offers an exceptionally quick journey of <strong>15 minutes</strong> to Heathrow Central (T2/3) and 18 minutes to T5. Trains are direct and depart every 15 minutes.</p>
+                        <p><strong>Alternative: Elizabeth Line</strong><br>
+                        A direct but slower option, taking approximately 27-28 minutes with more stops. The fare is around £12.80-£13.90.</p>
+                        <p><strong>Insight:</strong> Paddington offers the undisputed fastest route to any London airport via the Heathrow Express. The choice between the Express and Elizabeth Line is a direct trade-off between speed and cost.</p>
+                    `,
+                    takeaway: "The Heathrow Express offers unparalleled speed (15-18 minutes) and direct service. While it may be a premium option, the significant time savings make it ideal for time-sensitive travelers."
+                },
+                {
+                    airport: "London City Airport",
+                    code: "LCY",
+                    time: 32,
+                    timeText: "32 min",
+                    cost: 4,
+                    costText: "£4 - £16",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Train + Bus",
+                    modeIcon: "🚆+🚌",
+                    details: `
+                        <p><strong>Primary Route (Fastest): Elizabeth Line + Bus 474</strong><br>
+                        Take the Elizabeth Line to Custom House (21 min), then transfer to the 474 bus to the airport (8 min). Total journey is <strong>32 minutes</strong>.</p>
+                        <p><strong>Alternative: Elizabeth Line + DLR</strong><br>
+                        Take the Elizabeth Line to Stratford (19 min), then transfer to the DLR to the airport (17 min). Total journey is 39 minutes. The cost is lower, from £4-£8.</p>
+                        <p><strong>Insight:</strong> The Elizabeth Line has made LCY highly accessible from Paddington. The fastest route cleverly combines train and bus for the final leg.</p>
+                    `,
+                },
+                {
+                    airport: "Luton Airport",
+                    code: "LTN",
+                    time: 45,
+                    timeText: "45 min*",
+                    cost: 4.20,
+                    costText: "From £4.20*",
+                    changes: 1.5,
+                    changesText: "1 + shuttle",
+                    mode: "Train + Shuttle",
+                    modeIcon: "🚆+🚌",
+                    details: `
+                        <p><strong>Primary Route: Train + Shuttle Bus</strong><br>
+                        The journey requires a train (Thameslink/EMR) to Luton Airport Parkway, which takes about <strong>45 minutes</strong> from a connecting station. <strong>*Crucially, an onward shuttle bus is required from the Parkway station to the airport terminal, which adds time and potential cost.</strong></p>
+                        <p><strong>Insight:</strong> This is a prime example of the "last mile" problem. The advertised train time does not represent the full journey to the terminal. Rail is still the fastest primary mode.</p>
+                    `,
+                },
+                {
+                    airport: "Gatwick Airport",
+                    code: "LGW",
+                    time: 51,
+                    timeText: "51-56 min",
+                    cost: 13,
+                    costText: "From £13",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Train",
+                    modeIcon: "🚆",
+                    details: `
+                        <p><strong>Primary Route: Elizabeth Line + Thameslink</strong><br>
+                        The journey takes <strong>51-56 minutes</strong> and requires at least one change. Typically, you take the Elizabeth Line to Farringdon and then transfer to a southbound Thameslink train to Gatwick.</p>
+                        <p><strong>Insight:</strong> There is no direct service from Paddington. The efficiency of the transfer at a central hub like Farringdon is key to achieving the fastest time.</p>
+                    `,
+                },
+                {
+                    airport: "London Southend Airport",
+                    code: "SEN",
+                    time: 68,
+                    timeText: "1h 8m",
+                    cost: 14.90,
+                    costText: "From £14.90",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Train",
+                    modeIcon: "🚆",
+                    details: `
+                        <p><strong>Primary Route: Underground + Greater Anglia</strong><br>
+                        The fastest journey is <strong>1 hour 8 minutes</strong> and involves taking the Underground to London Liverpool Street, then a Greater Anglia train to the airport.</p>
+                        <p><strong>Insight:</strong> Southend's distance east of London results in a long journey time, requiring a significant cross-city transfer to Liverpool Street.</p>
+                    `,
+                },
+                {
+                    airport: "Stansted Airport",
+                    code: "STN",
+                    time: 70,
+                    timeText: "1h 10m",
+                    cost: 25,
+                    costText: "From £25",
+                    changes: 2,
+                    changesText: "2+",
+                    mode: "Train",
+                    modeIcon: "�",
+                    details: `
+                        <p><strong>Primary Route: Underground + Stansted Express</strong><br>
+                        The journey takes about <strong>1 hour 10 minutes</strong> and requires multiple changes. You must take the Underground to Liverpool Street or Tottenham Hale to connect with the Stansted Express train.</p>
+                        <p><strong>Insight:</strong> This route demonstrates that a dedicated "express" service doesn't guarantee a fast overall journey if significant time is spent reaching it. The cross-London transfer is the main time factor.</p>
+                    `,
+                }
+            ],
+            holborn: [
+                {
+                    airport: "London City Airport",
+                    code: "LCY",
+                    time: 30,
+                    timeText: "30-32 min",
+                    cost: 4,
+                    costText: "£4 - £7",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Tube + DLR",
+                    modeIcon: "🚇+🚆",
+                    details: `
+                        <p><strong>Primary Route (Fastest): Tube + DLR</strong><br>
+                        A highly efficient journey taking <strong>30-32 minutes</strong>. The route involves taking the Underground (e.g., Central Line) to Bank station and transferring to the DLR for a direct service to the airport's own station.</p>
+                        <p><strong>Insight:</strong> LCY's central location and excellent DLR integration make it the most accessible airport from Holborn. This is a prime example of where airport proximity and local network efficiency lead to the fastest overall journey.</p>
+                    `,
+                    takeaway: "For travelers starting from Holborn, London City Airport is the most efficient choice. The Tube to Bank + DLR route offers the fastest travel time (30-32 minutes) with only one change, making it a convenient and quick option."
+                },
+                {
+                    airport: "Heathrow Airport",
+                    code: "LHR",
+                    time: 38,
+                    timeText: "38 min",
+                    cost: 5,
+                    costText: "£5 - £12",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Tube + Train",
+                    modeIcon: "🚇+🚆",
+                    details: `
+                        <p><strong>Primary Route (Fastest): Walk/Tube + Elizabeth Line</strong><br>
+                        The fastest route is <strong>38 minutes</strong>, which requires a short walk or tube ride to nearby Farringdon station to catch the Elizabeth Line.</p>
+                        <p><strong>Alternative (Direct but Slower): Piccadilly Line</strong><br>
+                        A direct subway service is available from Holborn, but it's significantly slower, taking 54 minutes.</p>
+                        <p><strong>Insight:</strong> This highlights a key strategic choice: a short, efficient transfer to a faster line (Elizabeth Line) can save considerable time over a slower, direct route (Piccadilly Line).</p>
+                    `,
+                },
+                {
+                    airport: "Luton Airport",
+                    code: "LTN",
+                    time: 50,
+                    timeText: "50 min*",
+                    cost: 18,
+                    costText: "£18 - £35*",
+                    changes: 1.5,
+                    changesText: "1 + shuttle",
+                    mode: "Train + Shuttle",
+                    modeIcon: "🚆+🚌",
+                    details: `
+                        <p><strong>Primary Route: Walk/Tube + Train + Shuttle</strong><br>
+                        The journey takes approximately <strong>50 minutes</strong> to Luton Airport Parkway station. This requires a transfer to Farringdon to catch a Thameslink train. <strong>*An onward shuttle bus is required from the Parkway station to the airport terminal, adding extra time.</strong></p>
+                        <p><strong>Insight:</strong> Access from Holborn relies on the efficient Thameslink services from nearby hubs. The "last mile" shuttle bus connection is a consistent factor for all Luton journeys.</p>
+                    `,
+                },
+                {
+                    airport: "Gatwick Airport",
+                    code: "LGW",
+                    time: 52,
+                    timeText: "52 min",
+                    cost: 14,
+                    costText: "£14 - £29",
+                    changes: 1,
+                    changesText: "1",
+                    mode: "Train",
+                    modeIcon: "🚆",
+                    details: `
+                        <p><strong>Primary Route: Walk/Tube + Thameslink</strong><br>
+                        The journey is about <strong>52 minutes</strong> long. It requires a walk or short tube ride to Farringdon, followed by a direct Thameslink train to Gatwick.</p>
+                        <p><strong>Insight:</strong> Travel times to Gatwick are remarkably consistent from both Paddington and Holborn, as both rely on efficient connections to the same core Thameslink service.</p>
+                    `,
+                },
+                {
+                    airport: "Stansted Airport",
+                    code: "STN",
+                    time: 62,
+                    timeText: "1h 2m",
+                    cost: 16,
+                    costText: "£16 - £30",
+                    changes: 2,
+                    changesText: "2",
+                    mode: "Tube + Train",
+                    modeIcon: "🚇+🚆",
+                    details: `
+                        <p><strong>Primary Route: Tube + Stansted Express</strong><br>
+                        The journey is approximately <strong>1 hour 2 minutes</strong>. It requires taking the Central Line to London Liverpool Street, then transferring to the Stansted Express.</p>
+                         <p><strong>Alternative: Tube + Bus</strong><br>A route via Stratford to take a bus is also around 1h 2m but has only 1 change.</p>
+                        <p><strong>Insight:</strong> Although Holborn is more central, the journey to Stansted is still lengthy due to the need for a cross-city transfer to the express train's departure point at Liverpool Street.</p>
+                    `,
+                },
+                {
+                    airport: "London Southend Airport",
+                    code: "SEN",
+                    time: 72,
+                    timeText: "1h 12m",
+                    cost: 17,
+                    costText: "£17 - £25",
+                    changes: 2,
+                    changesText: "2",
+                    mode: "Tube + Train",
+                    modeIcon: "🚇+🚆",
+                    details: `
+                        <p><strong>Primary Route: Tube + Greater Anglia</strong><br>
+                        This is the longest journey from Holborn, taking <strong>1 hour 12 minutes</strong>. It requires taking the Central Line to London Liverpool Street, then a Greater Anglia train.</p>
+                        <p><strong>Insight:</strong> Southend's significant distance from central London is reflected in the long travel time, making the efficiency of the transfer at Liverpool Street a critical part of the journey.</p>
+                    `,
+                }
+            ]
+        };
+
+        let currentStation = 'paddington';
+        let sortBy = 'time';
+        let chartMetric = 'time';
+        let travelChart;
+
+        const stationSelector = document.getElementById('station-selector');
+        const sortSelector = document.getElementById('sort-selector');
+        const chartMetricSelector = document.getElementById('chart-metric-selector');
+        const cardsContainer = document.getElementById('airport-cards-container');
+        const chartTitle = document.getElementById('chart-title');
+        const takeawaysContent = document.getElementById('takeaways-content');
+
+        const modal = document.getElementById('modal');
+        const modalContent = document.getElementById('modal-content');
+        const modalTitle = document.getElementById('modal-title');
+        const modalBody = document.getElementById('modal-body');
+        const modalClose = document.getElementById('modal-close');
+
+        function formatCost(cost) {
+            return `£${cost.toFixed(2)}`;
+        }
+
+        function renderCards() {
+            cardsContainer.innerHTML = '';
+            const data = [...travelData[currentStation]];
+
+            data.sort((a, b) => {
+                if (sortBy === 'time') return a.time - b.time;
+                if (sortBy === 'cost') return a.cost - b.cost;
+                if (sortBy === 'changes') return a.changes - b.changes;
+                return 0;
+            });
+
+            data.forEach(item => {
+                const card = document.createElement('div');
+                card.className = 'card bg-white rounded-xl shadow-md hover:shadow-lg transition-shadow duration-300 flex flex-col cursor-pointer';
+                card.dataset.airportCode = item.code;
+                
+                let highlightClass = 'bg-teal-500';
+                if (sortBy === 'cost') highlightClass = 'bg-green-500';
+                if (sortBy === 'changes') highlightClass = 'bg-indigo-500';
+
+                let highlightValue = item.timeText;
+                if (sortBy === 'cost') highlightValue = item.costText;
+                if (sortBy === 'changes') highlightValue = item.changesText;
+
+                card.innerHTML = `
+                    <div class="p-5 flex-grow">
+                        <div class="flex justify-between items-start">
+                             <h3 class="text-xl font-bold text-slate-800">${item.airport} (${item.code})</h3>
+                             <div class="text-2xl">${item.modeIcon}</div>
+                        </div>
+                        <p class="text-sm text-slate-500 mb-4">via ${item.mode}</p>
+                        <div class="flex justify-around items-center text-center mt-4 border-t pt-4">
+                            <div>
+                                <p class="text-xs text-slate-500">Time</p>
+                                <p class="font-semibold text-lg ${sortBy === 'time' ? 'text-teal-600' : 'text-slate-700'}">${item.timeText}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-500">Cost</p>
+                                <p class="font-semibold text-lg ${sortBy === 'cost' ? 'text-green-600' : 'text-slate-700'}">${item.costText}</p>
+                            </div>
+                            <div>
+                                <p class="text-xs text-slate-500">Changes</p>
+                                <p class="font-semibold text-lg ${sortBy === 'changes' ? 'text-indigo-600' : 'text-slate-700'}">${item.changesText}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-slate-100 p-3 text-center text-sm font-medium text-slate-600 rounded-b-xl">
+                        Click for Details
+                    </div>
+                `;
+                cardsContainer.appendChild(card);
+            });
+        }
+        
+        function updateChart() {
+            const ctx = document.getElementById('travelChart').getContext('2d');
+            const data = travelData[currentStation];
+            const sortedData = [...data].sort((a,b) => a.time - b.time);
+
+            const labels = sortedData.map(item => item.airport);
+            let chartDataValues;
+            let chartLabel;
+            let backgroundColor;
+
+            switch(chartMetric) {
+                case 'cost':
+                    chartDataValues = sortedData.map(item => item.cost);
+                    chartLabel = 'Minimum Estimated Cost (£)';
+                    backgroundColor = 'rgba(22, 163, 74, 0.6)';
+                    chartTitle.textContent = `Minimum Estimated Cost from ${currentStation.charAt(0).toUpperCase() + currentStation.slice(1)}`;
+                    break;
+                case 'changes':
+                    chartDataValues = sortedData.map(item => item.changes);
+                    chartLabel = 'Number of Changes';
+                    backgroundColor = 'rgba(79, 70, 229, 0.6)';
+                     chartTitle.textContent = `Number of Changes from ${currentStation.charAt(0).toUpperCase() + currentStation.slice(1)}`;
+                    break;
+                default: // time
+                    chartDataValues = sortedData.map(item => item.time);
+                    chartLabel = 'Fastest Travel Time (minutes)';
+                    backgroundColor = 'rgba(13, 148, 136, 0.6)';
+                    chartTitle.textContent = `Fastest Travel Time from ${currentStation.charAt(0).toUpperCase() + currentStation.slice(1)}`;
+                    break;
+            }
+
+
+            if (travelChart) {
+                travelChart.destroy();
+            }
+
+            travelChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: chartLabel,
+                        data: chartDataValues,
+                        backgroundColor: backgroundColor,
+                        borderColor: backgroundColor.replace('0.6', '1'),
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: chartLabel
+                            }
+                        },
+                        y: {
+                           ticks: {
+                                autoSkip: false
+                           }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.x !== null) {
+                                        if(chartMetric === 'cost') {
+                                           label += `£${context.parsed.x.toFixed(2)}`;
+                                        } else if (chartMetric === 'changes') {
+                                           label += `${context.parsed.x}`;
+                                        } else {
+                                           label += `${context.parsed.x} min`;
+                                        }
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function updateTakeaways() {
+            const recommended = travelData[currentStation].find(item => item.takeaway);
+            let takeawaysHTML = `
+                <h4>Recommendation from <strong>${currentStation.charAt(0).toUpperCase() + currentStation.slice(1)}</strong>:</h4>
+                <p class="mb-4">${recommended ? recommended.takeaway : 'Select an airport to see key takeaways.'}</p>
+                <h4>General Insights:</h4>
+                <ul>
+                    <li>The "fastest" advertised journey isn't always door-to-door. Watch for "last mile" connections like the shuttle bus to Luton Airport.</li>
+                    <li>A "direct" route (like the Piccadilly Line to Heathrow) is not always the fastest. A strategic transfer to a quicker line (like the Elizabeth Line) can save significant time.</li>
+                    <li>For distant airports like Stansted and Southend, rail is almost always faster than bus, but the journey requires crossing London to a specific terminus like Liverpool Street.</li>
+                </ul>
+            `;
+            takeawaysContent.innerHTML = takeawaysHTML;
+        }
+
+        function handleStationSelect(e) {
+            const button = e.target.closest('button');
+            if (!button) return;
+            currentStation = button.dataset.station;
+            
+            document.querySelectorAll('#station-selector button').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            
+            renderAll();
+        }
+
+        function handleSortSelect(e) {
+            const button = e.target.closest('button');
+            if (!button) return;
+            sortBy = button.dataset.sort;
+            
+            document.querySelectorAll('#sort-selector button').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+            
+            renderCards();
+        }
+
+        function handleChartMetricSelect(e) {
+             const button = e.target.closest('button');
+            if (!button) return;
+            chartMetric = button.dataset.metric;
+            
+            document.querySelectorAll('#chart-metric-selector button').forEach(btn => btn.classList.remove('active'));
+            button.classList.add('active');
+
+            updateChart();
+        }
+
+        function handleCardClick(e) {
+            const card = e.target.closest('.card');
+            if (!card) return;
+            const airportCode = card.dataset.airportCode;
+            const data = travelData[currentStation].find(item => item.code === airportCode);
+            
+            if (data) {
+                modalTitle.textContent = `Details for ${data.airport}`;
+                modalBody.innerHTML = data.details;
+                modal.classList.remove('opacity-0', 'pointer-events-none');
+                modalContent.classList.remove('scale-95');
+            }
+        }
+
+        function closeModal() {
+            modal.classList.add('opacity-0', 'pointer-events-none');
+            modalContent.classList.add('scale-95');
+        }
+
+        function renderAll() {
+            renderCards();
+            updateChart();
+            updateTakeaways();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            stationSelector.addEventListener('click', handleStationSelect);
+            sortSelector.addEventListener('click', handleSortSelect);
+            chartMetricSelector.addEventListener('click', handleChartMetricSelect);
+            cardsContainer.addEventListener('click', handleCardClick);
+            modalClose.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+
+            document.querySelector('#station-selector button[data-station="paddington"]').classList.add('active');
+            document.querySelector('#sort-selector button[data-sort="time"]').classList.add('active');
+            document.querySelector('#chart-metric-selector button[data-metric="time"]').classList.add('active');
+
+            renderAll();
+        });
+    </script>
+</body>
+</html>
+�
